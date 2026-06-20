@@ -60,3 +60,33 @@ SENIOR_KEYWORDS = [
     "minimum 3 years", "minimum 4 years", "minimum 5 years",
     "3-5 years", "4-6 years", "5-8 years", "manager",
 ]
+
+# --- Second job profile: Test Engineer / QA, ~2 years experience ---
+
+# Search terms for the QA/Test Engineer profile (separate Adzuna search).
+QA_KEYWORDS = [
+    "test engineer",
+    "QA engineer",
+    "software tester",
+    "automation tester",
+    "SDET",
+]
+
+# Same location/country as the data-role search — change if your friend
+# wants a different city.
+QA_LOCATION = "Bangalore"
+
+# Phrases suggesting roughly 1-3 years experience (not a fresher, not senior).
+# Unlike JUNIOR_KEYWORDS, this profile does NOT match on "fresher"/"intern"
+# since your friend already has ~1.9 years and isn't looking for entry-level.
+QA_EXPERIENCE_KEYWORDS = [
+    "1-2 years", "1-3 years", "2-3 years", "1.5 years",
+    "2 years", "2+ years", "1+ year",
+]
+
+# Same senior-exclusion logic as the data-role profile.
+QA_SENIOR_KEYWORDS = [
+    "senior", "lead", "principal", "5+ years", "7+ years",
+    "minimum 3 years", "minimum 4 years", "minimum 5 years",
+    "3-5 years", "4-6 years", "5-8 years", "manager",
+]

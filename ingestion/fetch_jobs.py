@@ -1,6 +1,6 @@
 """
-Pulls Data Analyst / Data Engineer / BI job postings from the Adzuna API
-and upserts them into a Postgres `jobs_raw` table.
+Pulls Data Analyst/Engineer/BI and Test Engineer/QA job postings from the
+Adzuna API and upserts them into separate Postgres tables.
 
 Run locally:
     python ingestion/fetch_jobs.py
@@ -10,6 +10,7 @@ Requires environment variables (see ../.env.example):
 """
 
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -22,6 +23,7 @@ from dotenv import load_dotenv
 from config import (
     KEYWORDS, LOCATION, COUNTRY, RESULTS_PER_PAGE, MAX_PAGES,
     JUNIOR_KEYWORDS, SENIOR_KEYWORDS,
+    QA_KEYWORDS, QA_LOCATION, QA_EXPERIENCE_KEYWORDS, QA_SENIOR_KEYWORDS,
 )
 
 load_dotenv()
@@ -45,15 +47,19 @@ ON CONFLICT (id) DO UPDATE SET
     description = EXCLUDED.description;
 """
 
+UPSERT_SQL_QA = UPSERT_SQL.replace("jobs_raw", "jobs_raw_qa")
 
-def fetch_jobs(keyword, page):
+YEARS_PATTERN = re.compile(r"(\d{1,2})\s*[-+]?\s*(?:to\s*\d{1,2}\s*)?\+?\s*years?", re.IGNORECASE)
+
+
+def fetch_jobs(keyword, page, location=LOCATION):
     """Call the Adzuna search endpoint for one keyword/page combination."""
     params = {
         "app_id": ADZUNA_APP_ID,
         "app_key": ADZUNA_APP_KEY,
         "results_per_page": RESULTS_PER_PAGE,
         "what": keyword,
-        "where": LOCATION,
+        "where": location,
         "content-type": "application/json",
     }
     resp = requests.get(f"{BASE_URL}/{page}", params=params, timeout=30)
@@ -79,25 +85,46 @@ def normalize(job):
     }
 
 
-def is_junior_friendly(job):
+def mentions_high_experience(text, threshold=3):
     """
-    Heuristic check: does this posting look like it wants 0-2 years
-    experience? Adzuna has no clean "years of experience" field, so we
-    search the title + description text for keyword hints instead.
+    Returns True if any "<number> year(s)" mention in the text has a
+    number >= threshold.
+    """
+    for match in YEARS_PATTERN.finditer(text):
+        years = int(match.group(1))
+        if years >= threshold:
+            return True
+    return False
 
-    Returns True only if a JUNIOR_KEYWORDS phrase is found AND no
-    SENIOR_KEYWORDS phrase is found (postings often mention both, e.g.
-    "fresher reporting to a Senior Analyst" — we don't want that to count).
+
+def matches_experience_profile(job, include_keywords, exclude_keywords, senior_threshold=3):
+    """
+    A posting is excluded if it numerically mentions senior_threshold+
+    years of experience anywhere, OR matches an explicit exclude_keyword.
+    Otherwise, included only if it matches at least one include_keyword.
     """
     text = f"{job['title']} {job['description'] or ''}".lower()
 
-    if any(senior_term in text for senior_term in SENIOR_KEYWORDS):
+    if mentions_high_experience(text, threshold=senior_threshold):
         return False
 
-    return any(junior_term in text for junior_term in JUNIOR_KEYWORDS)
+    if any(term in text for term in exclude_keywords):
+        return False
+
+    return any(term in text for term in include_keywords)
 
 
-def load_jobs(jobs):
+def is_junior_friendly(job):
+    """Data-role profile: 0-2 years / fresher-level postings."""
+    return matches_experience_profile(job, JUNIOR_KEYWORDS, SENIOR_KEYWORDS, senior_threshold=3)
+
+
+def is_qa_match(job):
+    """QA/Test Engineer profile: ~1-3 years, not senior."""
+    return matches_experience_profile(job, QA_EXPERIENCE_KEYWORDS, QA_SENIOR_KEYWORDS, senior_threshold=4)
+
+
+def load_jobs(jobs, upsert_sql=UPSERT_SQL):
     """Upsert a batch of normalized job rows into Postgres."""
     if not jobs:
         print("No jobs to load.")
@@ -111,46 +138,58 @@ def load_jobs(jobs):
             j["created"], j["redirect_url"], Json(j["raw_json"]), now, now,
         )
         for j in jobs
-        if j["id"]  # skip anything missing a stable id
+        if j["id"]
     ]
 
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
-            execute_values(cur, UPSERT_SQL, rows)
+            execute_values(cur, upsert_sql, rows)
         conn.commit()
         print(f"Upserted {len(rows)} postings.")
     finally:
         conn.close()
 
 
-def main():
+def fetch_and_dedupe(keywords, location):
+    """Run an Adzuna search across all keywords/pages, deduped by id."""
     all_jobs = []
-    for keyword in KEYWORDS:
+    for keyword in keywords:
         for page in range(1, MAX_PAGES + 1):
             print(f"Fetching '{keyword}' page {page}...")
             try:
-                data = fetch_jobs(keyword, page)
+                data = fetch_jobs(keyword, page, location=location)
             except requests.HTTPError as exc:
                 print(f"  request failed, skipping: {exc}")
                 continue
 
             results = data.get("results", [])
             if not results:
-                break  # no more pages for this keyword
+                break
 
             all_jobs.extend(normalize(job) for job in results)
-            time.sleep(1)  # stay polite on the free tier
+            time.sleep(1)
 
-    # The same posting often matches multiple keywords — keep one copy.
-    # The same posting often matches multiple keywords — keep one copy.
-    unique_jobs = list({job["id"]: job for job in all_jobs if job["id"]}.values())
-    print(f"Fetched {len(unique_jobs)} unique postings this run.")
+    return list({job["id"]: job for job in all_jobs if job["id"]}.values())
+
+
+def main():
+    unique_jobs = fetch_and_dedupe(KEYWORDS, LOCATION)
+    print(f"Fetched {len(unique_jobs)} unique data-role postings this run.")
 
     junior_jobs = [job for job in unique_jobs if is_junior_friendly(job)]
     print(f"{len(junior_jobs)} of those look junior-friendly (0-2 years).")
 
-    load_jobs(junior_jobs)
+    load_jobs(junior_jobs, upsert_sql=UPSERT_SQL)
+
+    unique_qa_jobs = fetch_and_dedupe(QA_KEYWORDS, QA_LOCATION)
+    print(f"Fetched {len(unique_qa_jobs)} unique QA postings this run.")
+
+    qa_matches = [job for job in unique_qa_jobs if is_qa_match(job)]
+    print(f"{len(qa_matches)} of those match the QA experience profile.")
+
+    load_jobs(qa_matches, upsert_sql=UPSERT_SQL_QA)
+
     print("Done.")
 
 
