@@ -6,7 +6,7 @@ job_pipeline:
       host: "{{ env_var('SUPABASE_HOST') }}"
       user: "{{ env_var('SUPABASE_USER') }}"
       password: "{{ env_var('SUPABASE_PASSWORD') }}"
-      port: 5432
+      port: 6543
       dbname: "{{ env_var('SUPABASE_DBNAME') }}"
       schema: public
       threads: 4
