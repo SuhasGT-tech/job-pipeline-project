@@ -30,10 +30,15 @@ jobs:
         working-directory: ingestion
         run: python fetch_jobs.py
 
-      - name: Run dbt
+     - name: Run dbt
         working-directory: dbt_project
         run: |
           mkdir -p ~/.dbt
           cp profiles.yml.example ~/.dbt/profiles.yml
+          echo "--- DEBUG: profiles.yml contents ---"
+          cat ~/.dbt/profiles.yml
+          echo "--- DEBUG: dbt debug output ---"
+          dbt debug
+          echo "--- Running dbt run ---"
           dbt run
           dbt test
