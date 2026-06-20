@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: public
+    tables:
+      - name: jobs_raw
+        columns:
+          - name: id
+            tests:
+              - unique
+              - not_null
+
+models:
+  - name: stg_jobs
+    description: Cleaned job postings with boolean skill flags extracted from title + description.
+    columns:
+      - name: id
+        tests:
+          - unique
+          - not_null

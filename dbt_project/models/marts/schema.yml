@@ -1,0 +1,9 @@
+version: 2
+
+models:
+  - name: mart_skill_demand
+    description: Weekly count of postings mentioning each tracked skill.
+  - name: mart_company_hiring
+    description: Open posting counts per company, with first/last seen dates.
+  - name: mart_postings_trend
+    description: Count of newly seen postings per day, for trend charting.
