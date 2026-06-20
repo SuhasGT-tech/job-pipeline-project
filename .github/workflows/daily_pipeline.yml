@@ -30,7 +30,7 @@ jobs:
         working-directory: ingestion
         run: python fetch_jobs.py
 
-     - name: Run dbt
+      - name: Run dbt
         working-directory: dbt_project
         run: |
           mkdir -p ~/.dbt
