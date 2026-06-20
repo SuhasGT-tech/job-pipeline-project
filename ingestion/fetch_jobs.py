@@ -19,7 +19,10 @@ import psycopg2
 from psycopg2.extras import execute_values, Json
 from dotenv import load_dotenv
 
-from config import KEYWORDS, LOCATION, COUNTRY, RESULTS_PER_PAGE, MAX_PAGES
+from config import (
+    KEYWORDS, LOCATION, COUNTRY, RESULTS_PER_PAGE, MAX_PAGES,
+    JUNIOR_KEYWORDS, SENIOR_KEYWORDS,
+)
 
 load_dotenv()
 
@@ -76,6 +79,24 @@ def normalize(job):
     }
 
 
+def is_junior_friendly(job):
+    """
+    Heuristic check: does this posting look like it wants 0-2 years
+    experience? Adzuna has no clean "years of experience" field, so we
+    search the title + description text for keyword hints instead.
+
+    Returns True only if a JUNIOR_KEYWORDS phrase is found AND no
+    SENIOR_KEYWORDS phrase is found (postings often mention both, e.g.
+    "fresher reporting to a Senior Analyst" — we don't want that to count).
+    """
+    text = f"{job['title']} {job['description'] or ''}".lower()
+
+    if any(senior_term in text for senior_term in SENIOR_KEYWORDS):
+        return False
+
+    return any(junior_term in text for junior_term in JUNIOR_KEYWORDS)
+
+
 def load_jobs(jobs):
     """Upsert a batch of normalized job rows into Postgres."""
     if not jobs:
@@ -122,10 +143,14 @@ def main():
             time.sleep(1)  # stay polite on the free tier
 
     # The same posting often matches multiple keywords — keep one copy.
+    # The same posting often matches multiple keywords — keep one copy.
     unique_jobs = list({job["id"]: job for job in all_jobs if job["id"]}.values())
     print(f"Fetched {len(unique_jobs)} unique postings this run.")
 
-    load_jobs(unique_jobs)
+    junior_jobs = [job for job in unique_jobs if is_junior_friendly(job)]
+    print(f"{len(junior_jobs)} of those look junior-friendly (0-2 years).")
+
+    load_jobs(junior_jobs)
     print("Done.")
 
 
