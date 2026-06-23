@@ -42,3 +42,6 @@ jobs:
           echo "--- Running dbt run ---"
           dbt run
           dbt test
+      - name: Send email digest
+          working-directory: ingestion
+        run: python send_digest.py
