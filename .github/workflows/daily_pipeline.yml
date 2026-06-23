@@ -45,3 +45,4 @@ jobs:
       - name: Send email digest
         working-directory: ingestion
         run: python send_digest.py
+        
